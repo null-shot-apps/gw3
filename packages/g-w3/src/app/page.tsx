@@ -1,84 +1,81 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
+import Header from './components/Header';
+import GasCard from './components/GasCard';
+import BestChainCard from './components/BestChainCard';
+import TrendChart from './components/TrendChart';
+import { GasData } from '@/app/types';
+import { fetchGasData } from '@/app/utils/api';
 
-const slogans = [
-  "Turn chats into apps",
-  "Prompt. Ship. Repeat.",
-  "Build anything from a chat",
-  "Ideas → Apps, instantly",
-  "From zero to MVP in minutes",
-  "Your cofounder in the command line",
-  "Draft, iterate, deploy",
-  "Ship faster than you can type",
-  "Design in text, deliver in code",
-  "Dream it. Prompt it. Run it.",
-  "Chat-native app building",
-  "From prompt to product",
-  "One prompt, infinite apps",
-  "Stop scaffolding. Start shipping.",
-  "Prototype at the speed of thought",
-  "Make conversations executable"
-];
+const REFRESH_INTERVAL = 30000; // 30 seconds
 
-export default function Landing() {
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [isVisible, setIsVisible] = useState(true);
+export default function GasWise() {
+  const [gasData, setGasData] = useState<GasData[]>([]);
+  const [historicalData, setHistoricalData] = useState<Map<string, GasData[]>>(new Map());
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setIsVisible(false);
-      setTimeout(() => {
-        setCurrentIndex((prev) => (prev + 1) % slogans.length);
-        setIsVisible(true);
-      }, 400);
-    }, 2800);
-
-    return () => clearInterval(interval);
+  const loadGasData = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      const data = await fetchGasData();
+      setGasData(data);
+      setLastUpdate(new Date());
+      
+      // Update historical data for charts
+      setHistoricalData((prev) => {
+        const newHistorical = new Map(prev);
+        data.forEach((gasInfo) => {
+          const chainHistory = newHistorical.get(gasInfo.chainId) || [];
+          // Keep last 24 hours of data (max 1440 points at 1-minute intervals)
+          const updatedHistory = [...chainHistory, gasInfo].slice(-1440);
+          newHistorical.set(gasInfo.chainId, updatedHistory);
+        });
+        return newHistorical;
+      });
+    } catch (error) {
+      console.error('Error loading gas data:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
   }, []);
 
+  useEffect(() => {
+    // Initial load
+    loadGasData();
+    
+    // Auto-refresh every 30 seconds
+    const interval = setInterval(loadGasData, REFRESH_INTERVAL);
+    
+    return () => clearInterval(interval);
+  }, [loadGasData]);
+
   return (
-    <div className="relative h-[100dvh] w-full overflow-hidden bg-black text-white">
-      {/* Enhanced animated aurora background layers */}
-      <div className="absolute inset-0 bg-aurora-layer-1" />
-      <div className="absolute inset-0 bg-aurora-layer-2" />
-      <div className="absolute inset-0 bg-aurora-layer-3" />
+    <div className="min-h-screen bg-gray-50 dark:bg-black">
+      <Header 
+        onRefresh={loadGasData} 
+        isRefreshing={isRefreshing}
+        lastUpdate={lastUpdate}
+      />
       
-      {/* Floating particles overlay */}
-      <div className="absolute inset-0 bg-particles" />
-      
-      {/* Main content - centered */}
-      <main className="relative z-10 h-full flex flex-col items-center justify-center px-6">
-        <h1 className="text-center text-[clamp(28px,6vw,64px)] font-medium tracking-tight mb-4">
-          Turn Chats into Apps
-        </h1>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Best Chain Recommendation */}
+        <div className="mb-8">
+          <BestChainCard gasData={gasData} />
+        </div>
         
-        {/* Rotating slogans */}
-        <div className="mt-4 h-8 md:h-10 overflow-hidden flex items-center justify-center">
-          <span
-            className={`inline-block text-center text-[clamp(18px,3vw,32px)] font-light transition-all duration-[400ms] ease-in-out ${
-              isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2'
-            }`}
-          >
-            {slogans[currentIndex]}
-          </span>
+        {/* Gas Cards Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+          {gasData.map((data) => (
+            <GasCard key={data.chainId} data={data} />
+          ))}
         </div>
+        
+        {/* Trend Chart */}
+        <TrendChart historicalData={historicalData} />
       </main>
-      
-      {/* Start Prompting arrow pointing left - bottom left */}
-      <div className="absolute left-6 md:left-8 bottom-[5%] z-20 flex items-center gap-3 arrow-point-left">
-        <div className="flex items-center gap-2 text-white/80 font-medium text-sm md:text-base">
-          <svg 
-            className="w-5 h-5 md:w-6 md:h-6 animate-bounce-horizontal" 
-            fill="none" 
-            viewBox="0 0 24 24" 
-            stroke="currentColor"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          <span>Start prompting</span>
-        </div>
-      </div>
     </div>
   );
 }
+
